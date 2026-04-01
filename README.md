@@ -4,6 +4,9 @@ Hide older Pi TUI chat messages without shrinking the underlying session context
 
 `pi-hide-messages` lets you keep long conversations readable by hiding older entries from the Pi terminal UI while preserving the session data needed to continue the conversation. It adds simple slash commands for manual control and can auto-hide older messages whenever a session starts or switches.
 
+<img width="1360" height="752" alt="image" src="https://github.com/user-attachments/assets/50b6a2bf-99ba-48e2-a209-cb831156a321" />
+
+
 > [!NOTE]
 > Hidden messages are **not deleted**. They are only hidden from the Pi TUI display layer, so the underlying session data stays intact, the active model/agent still keeps the full conversation context, and `/restore-messages` brings the hidden entries back into view.
 
