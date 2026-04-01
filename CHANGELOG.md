@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-04-01
+
+### Changed
+- Added Related Pi Extensions cross-linking section to README for discoverability
+- Aligned npm keywords for improved extension searchability (pi-coding-agent, pi-tui, coding-agent, context-window, messages, privacy)
+
 ## [0.1.0] - 2026-04-01
 
 ### Added
