@@ -1,0 +1,6 @@
+{
+  "_comment_0": "pi-hide-messages example config. Copy this file to ~/.pi/agent/extensions/pi-hide-messages/config.json or .pi/extensions/pi-hide-messages/config.json.",
+  "debug": false,
+  "defaultVisibleCount": 10,
+  "autoHideOnSessionStart": true
+}
