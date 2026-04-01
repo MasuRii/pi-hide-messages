@@ -101,3 +101,10 @@ Project config overrides the global extension config when both are present.
 - It patches Pi's interactive session rendering so hidden entries are omitted from the visible TUI history.
 - Session data remains restorable, which keeps the extension focused on UI readability rather than destructive cleanup.
 - Hidden entries still remain part of the session record, so the model and agent keep their full context even when those messages are not currently rendered in the TUI.
+
+## Related Pi Extensions
+
+- [pi-tool-display](https://github.com/MasuRii/pi-tool-display) — Compact tool rendering and diff visualization
+- [pi-startup-redraw-fix](https://github.com/MasuRii/pi-startup-redraw-fix) — Fix terminal redraw glitches on startup
+- [pi-image-tools](https://github.com/MasuRii/pi-image-tools) — Image attachment and inline preview
+- [pi-smart-voice-notify](https://github.com/MasuRii/pi-smart-voice-notify) — Multi-channel TTS and sound notifications
