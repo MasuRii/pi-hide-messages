@@ -72,7 +72,4 @@ export default function hideMessagesExtension(pi: ExtensionAPI): void {
     await syncAutoHide(ctx);
   });
 
-  pi.on("session_switch", async (_event, ctx) => {
-    await syncAutoHide(ctx);
-  });
 }

@@ -8,6 +8,7 @@ import {
   HIDE_MESSAGES_USAGE,
   HIDE_MESSAGES_CONTROL_MODE_MANUAL_HIDE,
 } from "./constants.js";
+import { queueRuntimeReload } from "./reload-queue.js";
 import { persistHideMessagesControlMode } from "./session-control.js";
 import { updateSessionFileVisibility } from "./session-file.js";
 import {
@@ -125,7 +126,7 @@ function createHideMessagesHandler(
       return;
     }
 
-    await ctx.reload();
+    await queueRuntimeReload(ctx, "hide-messages");
   };
 }
 

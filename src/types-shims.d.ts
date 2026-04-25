@@ -12,6 +12,7 @@ declare module "node:fs" {
   export function mkdirSync(path: string, options?: { recursive?: boolean }): void;
   export function readFileSync(path: string, encoding: "utf-8"): string;
   export function renameSync(oldPath: string, newPath: string): void;
+  export function rmSync(path: string, options?: { recursive?: boolean; force?: boolean }): void;
   export function unlinkSync(path: string): void;
   export function writeFileSync(path: string, content: string, encoding: "utf-8"): void;
 }
@@ -70,6 +71,11 @@ declare module "@mariozechner/pi-coding-agent" {
     ): void;
 
     appendEntry<T = unknown>(customType: string, data?: T): void;
+
+    sendUserMessage(
+      content: string,
+      options?: { deliverAs?: "steer" | "followUp" },
+    ): void;
 
     registerCommand(
       name: string,

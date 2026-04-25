@@ -7,6 +7,7 @@ import {
   RESTORE_MESSAGES_COMMAND,
   RESTORE_MESSAGES_DESCRIPTION,
 } from "./constants.js";
+import { queueRuntimeReload } from "./reload-queue.js";
 import { persistHideMessagesControlMode } from "./session-control.js";
 import { restoreSessionFileVisibility } from "./session-file.js";
 import {
@@ -71,7 +72,7 @@ async function handleRestoreMessagesCommand(
     return;
   }
 
-  await ctx.reload();
+  await queueRuntimeReload(ctx, "restore-messages");
 }
 
 export function registerRestoreMessagesCommand(pi: ExtensionAPI): void {
