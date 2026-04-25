@@ -26,7 +26,7 @@ Hide older Pi TUI chat messages without shrinking the underlying session context
 Place this folder in one of Pi's auto-discovery locations:
 
 ```text
-# Global (all projects)
+# Global default (when PI_CODING_AGENT_DIR is unset)
 ~/.pi/agent/extensions/pi-hide-messages
 
 # Project-specific
@@ -66,7 +66,7 @@ pi install git:github.com/MasuRii/pi-hide-messages
 Runtime configuration is loaded from:
 
 ```text
-# Global config
+# Global config default (respects PI_CODING_AGENT_DIR)
 ~/.pi/agent/extensions/pi-hide-messages/config.json
 
 # Optional project override
