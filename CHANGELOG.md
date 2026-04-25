@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-04-25
+
+### Added
+- Added runtime reload queue handling for hide and restore command reload failures
+- Added runtime validation coverage for hide and restore command flows
+
+### Changed
+- Clarified global config path guidance in README and the example config template
+- Aligned Pi peer dependency metadata with the local Pi v0.70.2 extension runtime target
+- Extended Pi runtime type shims for the reload queue and validation coverage
+
 ## [0.1.1] - 2026-04-01
 
 ### Changed
