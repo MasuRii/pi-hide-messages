@@ -1,6 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 
@@ -9,18 +8,16 @@ import {
   DEFAULT_CONFIG_FILE,
   EXTENSION_ID,
 } from "./constants.js";
+import { resolvePiAgentDir } from "./agent-dir.js";
 import type {
   HideMessagesConfigFile,
   HideMessagesConfigLoadResult,
   ResolvedHideMessagesConfig,
 } from "./types.js";
 
-function resolveExtensionRoot(moduleUrl = import.meta.url): string {
-  return dirname(dirname(fileURLToPath(moduleUrl)));
+function getGlobalConfigPath(): string {
+  return join(resolvePiAgentDir(), "extensions", EXTENSION_ID, CONFIG_BASENAME);
 }
-
-const EXTENSION_ROOT = resolveExtensionRoot();
-const EXTENSION_CONFIG_PATH = join(EXTENSION_ROOT, CONFIG_BASENAME);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -154,9 +151,10 @@ export function loadHideMessagesConfig(
 ): HideMessagesConfigLoadResult {
   const cwd = getConfigCwd(ctx);
   const projectConfigPath = getProjectConfigPath(cwd);
+  const globalConfigPath = getGlobalConfigPath();
   const warnings: string[] = [];
 
-  const globalConfig = readConfigFile(EXTENSION_CONFIG_PATH, warnings);
+  const globalConfig = readConfigFile(globalConfigPath, warnings);
   const projectConfig = readConfigFile(projectConfigPath, warnings);
 
   let config: ResolvedHideMessagesConfig = {
@@ -168,7 +166,7 @@ export function loadHideMessagesConfig(
 
   config = mergeConfigFile(config, globalConfig);
   config = mergeConfigFile(config, projectConfig);
-  config.configPath = existsSync(projectConfigPath) ? projectConfigPath : EXTENSION_CONFIG_PATH;
+  config.configPath = existsSync(projectConfigPath) ? projectConfigPath : globalConfigPath;
 
-  return { config, warnings, projectConfigPath, globalConfigPath: EXTENSION_CONFIG_PATH };
+  return { config, warnings, projectConfigPath, globalConfigPath };
 }

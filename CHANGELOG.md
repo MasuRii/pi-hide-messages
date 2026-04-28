@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Fixed global configuration loading for npm and git installs by resolving `config.json` from Pi's agent extension directory. Thanks @any-victor for the report and proposed fix.
+
 ## [0.1.3] - 2026-04-25
 
 ### Added

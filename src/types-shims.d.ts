@@ -1,7 +1,14 @@
 declare namespace NodeJS {
+  interface ProcessEnv {
+    [key: string]: string | undefined;
+    HOME?: string;
+    PI_CODING_AGENT_DIR?: string;
+  }
+
   interface Process {
     pid: number;
     cwd(): string;
+    env: ProcessEnv;
   }
 }
 
@@ -15,6 +22,10 @@ declare module "node:fs" {
   export function rmSync(path: string, options?: { recursive?: boolean; force?: boolean }): void;
   export function unlinkSync(path: string): void;
   export function writeFileSync(path: string, content: string, encoding: "utf-8"): void;
+}
+
+declare module "node:os" {
+  export function homedir(): string;
 }
 
 declare module "node:path" {
