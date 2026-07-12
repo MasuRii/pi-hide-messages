@@ -15,17 +15,22 @@ import type {
 } from "./types.js";
 
 const PATCH_FLAG = "__piHideMessagesRenderPatched" as const;
-const PATCH_VERSION = 2;
+const PATCH_VERSION = 3;
 
-type RenderSessionContext = (
-  sessionContext: VisibleSessionContext,
-  options?: { updateFooter?: boolean; populateHistory?: boolean },
-) => void;
+type RenderOptions = { updateFooter?: boolean; populateHistory?: boolean };
+
+// Legacy API (Pi <= 0.80.3): renders a pre-projected session context.
+type RenderSessionContext = (sessionContext: VisibleSessionContext, options?: RenderOptions) => void;
+
+// Current API (Pi >= 0.80.5): renders the compaction-aware active entry list.
+type RenderSessionEntries = (entries: SessionTreeEntry[], options?: RenderOptions) => void;
 
 type PatchableInteractiveModePrototype = {
   [PATCH_FLAG]?: boolean;
   renderSessionContext?: RenderSessionContext;
+  renderSessionEntries?: RenderSessionEntries;
   __piHideMessagesOriginalRenderSessionContext?: RenderSessionContext;
+  __piHideMessagesOriginalRenderSessionEntries?: RenderSessionEntries;
   __piHideMessagesRenderPatchVersion?: number;
 };
 
@@ -51,6 +56,11 @@ type VisibilityHelpers = {
     keepVisibleCount: number,
     leafId?: string | null,
   ): VisibleSessionContext;
+  selectVisibleEntries(
+    entries: readonly SessionTreeEntry[],
+    keepVisibleCount: number,
+  ): SessionTreeEntry[];
+  dropHiddenEntries(entries: readonly SessionTreeEntry[]): SessionTreeEntry[];
   hasHiddenEntries(entries: readonly SessionTreeEntry[]): boolean;
 };
 
@@ -112,6 +122,98 @@ function loadConfig(instance: InteractiveModeLike, config: ConfigHelpers): HideM
   }
 }
 
+/**
+ * Resolve how many primary items to keep visible for the current session, or
+ * `null` when everything should stay visible (manual restore / disabled hide).
+ * Returns `hidden` when nothing should be hidden by count but persisted hidden
+ * flags on entries should still be honored.
+ */
+type VisibilityDecision =
+  | { kind: "all" }
+  | { kind: "hidden-flags" }
+  | { kind: "keep"; keepVisibleCount: number };
+
+function resolveVisibilityDecision(
+  instance: InteractiveModeLike,
+  entries: readonly SessionTreeEntry[],
+  visibility: VisibilityHelpers,
+  controls: ControlHelpers,
+  config: ConfigHelpers,
+): VisibilityDecision {
+  const rawEntries = getSessionEntries(instance);
+  const leafId = getLeafId(instance);
+  const controlState = controls.getLatestHideMessagesControlState(rawEntries, leafId);
+
+  if (controlState?.mode === HIDE_MESSAGES_CONTROL_MODE_MANUAL_RESTORE) {
+    return { kind: "all" };
+  }
+
+  if (controlState?.mode === HIDE_MESSAGES_CONTROL_MODE_MANUAL_HIDE) {
+    const resolvedConfig = loadConfig(instance, config);
+    return {
+      kind: "keep",
+      keepVisibleCount: controlState.visibleCount ?? resolvedConfig.defaultVisibleCount,
+    };
+  }
+
+  const resolvedConfig = loadConfig(instance, config);
+  if (resolvedConfig.autoHideOnSessionStart) {
+    return { kind: "keep", keepVisibleCount: resolvedConfig.defaultVisibleCount };
+  }
+
+  if (visibility.hasHiddenEntries(entries)) {
+    return { kind: "hidden-flags" };
+  }
+
+  return { kind: "all" };
+}
+
+// -----------------------------------------------------------------------------
+// Current API: renderSessionEntries(entries, options)
+// -----------------------------------------------------------------------------
+
+function resolveVisibleEntries(
+  instance: InteractiveModeLike,
+  entries: SessionTreeEntry[],
+  visibility: VisibilityHelpers,
+  controls: ControlHelpers,
+  config: ConfigHelpers,
+): SessionTreeEntry[] {
+  if (entries.length === 0) {
+    return entries;
+  }
+
+  const decision = resolveVisibilityDecision(instance, entries, visibility, controls, config);
+  switch (decision.kind) {
+    case "all":
+      return entries;
+    case "hidden-flags":
+      return visibility.dropHiddenEntries(entries);
+    case "keep":
+      return visibility.selectVisibleEntries(entries, decision.keepVisibleCount);
+  }
+}
+
+function buildPatchedRenderEntries(
+  originalRender: RenderSessionEntries,
+  visibility: VisibilityHelpers,
+  controls: ControlHelpers,
+  config: ConfigHelpers,
+): RenderSessionEntries {
+  return function renderVisibleSessionEntries(
+    this: InteractiveModeLike,
+    entries: SessionTreeEntry[],
+    options?: RenderOptions,
+  ): void {
+    const visibleEntries = resolveVisibleEntries(this, entries, visibility, controls, config);
+    originalRender.call(this as never, visibleEntries, options);
+  };
+}
+
+// -----------------------------------------------------------------------------
+// Legacy API: renderSessionContext(sessionContext, options)
+// -----------------------------------------------------------------------------
+
 function resolveVisibleContext(
   instance: InteractiveModeLike,
   sessionContext: VisibleSessionContext,
@@ -125,34 +227,22 @@ function resolveVisibleContext(
   }
 
   const leafId = getLeafId(instance);
-  const controlState = controls.getLatestHideMessagesControlState(entries, leafId);
-  if (controlState?.mode === HIDE_MESSAGES_CONTROL_MODE_MANUAL_RESTORE) {
-    return sessionContext;
+  const decision = resolveVisibilityDecision(instance, entries, visibility, controls, config);
+  switch (decision.kind) {
+    case "all":
+      return sessionContext;
+    case "hidden-flags":
+      return visibility.buildVisibleSessionContext(entries, leafId);
+    case "keep":
+      return visibility.buildVisibleSessionContextWithHiddenPrefix(
+        entries,
+        decision.keepVisibleCount,
+        leafId,
+      );
   }
-
-  if (controlState?.mode === HIDE_MESSAGES_CONTROL_MODE_MANUAL_HIDE) {
-    const resolvedConfig = loadConfig(instance, config);
-    const visibleCount = controlState.visibleCount ?? resolvedConfig.defaultVisibleCount;
-    return visibility.buildVisibleSessionContextWithHiddenPrefix(entries, visibleCount, leafId);
-  }
-
-  const resolvedConfig = loadConfig(instance, config);
-  if (resolvedConfig.autoHideOnSessionStart) {
-    return visibility.buildVisibleSessionContextWithHiddenPrefix(
-      entries,
-      resolvedConfig.defaultVisibleCount,
-      leafId,
-    );
-  }
-
-  if (visibility.hasHiddenEntries(entries)) {
-    return visibility.buildVisibleSessionContext(entries, leafId);
-  }
-
-  return sessionContext;
 }
 
-function buildPatchedRender(
+function buildPatchedRenderContext(
   originalRender: RenderSessionContext,
   visibility: VisibilityHelpers,
   controls: ControlHelpers,
@@ -161,7 +251,7 @@ function buildPatchedRender(
   return function renderVisibleSessionContext(
     this: InteractiveModeLike,
     sessionContext: VisibleSessionContext,
-    options?: { updateFooter?: boolean; populateHistory?: boolean },
+    options?: RenderOptions,
   ): void {
     const visibleContext = resolveVisibleContext(this, sessionContext, visibility, controls, config);
     originalRender.call(this as never, visibleContext, options);
@@ -191,28 +281,47 @@ export async function applyHideMessagesRenderPatch(): Promise<RenderPatchResult>
       return { patched: false, alreadyPatched: true };
     }
 
-    const savedOriginalRender = prototype.__piHideMessagesOriginalRenderSessionContext;
-    const currentRender = prototype.renderSessionContext;
-    const originalRender = typeof savedOriginalRender === "function" ? savedOriginalRender : currentRender;
-    if (typeof originalRender !== "function") {
-      return {
-        patched: false,
-        alreadyPatched: false,
-        error: "InteractiveMode.renderSessionContext is unavailable",
-      };
+    // Prefer the current entry-based API (Pi >= 0.80.5); fall back to the legacy
+    // context-based API for older Pi releases still in the supported range.
+    const savedOriginalEntries = prototype.__piHideMessagesOriginalRenderSessionEntries;
+    const currentEntries = prototype.renderSessionEntries;
+    const originalEntries = typeof savedOriginalEntries === "function" ? savedOriginalEntries : currentEntries;
+
+    if (typeof originalEntries === "function") {
+      prototype.__piHideMessagesOriginalRenderSessionEntries = originalEntries;
+      prototype.renderSessionEntries = buildPatchedRenderEntries(
+        originalEntries,
+        visibility,
+        controls,
+        config,
+      );
+      prototype[PATCH_FLAG] = true;
+      prototype.__piHideMessagesRenderPatchVersion = PATCH_VERSION;
+      return { patched: true, alreadyPatched: false };
     }
 
-    prototype.__piHideMessagesOriginalRenderSessionContext = originalRender;
-    prototype.renderSessionContext = buildPatchedRender(
-      originalRender,
-      visibility,
-      controls,
-      config,
-    );
-    prototype[PATCH_FLAG] = true;
-    prototype.__piHideMessagesRenderPatchVersion = PATCH_VERSION;
+    const savedOriginalContext = prototype.__piHideMessagesOriginalRenderSessionContext;
+    const currentContext = prototype.renderSessionContext;
+    const originalContext = typeof savedOriginalContext === "function" ? savedOriginalContext : currentContext;
 
-    return { patched: true, alreadyPatched: false };
+    if (typeof originalContext === "function") {
+      prototype.__piHideMessagesOriginalRenderSessionContext = originalContext;
+      prototype.renderSessionContext = buildPatchedRenderContext(
+        originalContext,
+        visibility,
+        controls,
+        config,
+      );
+      prototype[PATCH_FLAG] = true;
+      prototype.__piHideMessagesRenderPatchVersion = PATCH_VERSION;
+      return { patched: true, alreadyPatched: false };
+    }
+
+    return {
+      patched: false,
+      alreadyPatched: false,
+      error: "InteractiveMode.renderSessionEntries is unavailable",
+    };
   } catch (error) {
     return {
       patched: false,

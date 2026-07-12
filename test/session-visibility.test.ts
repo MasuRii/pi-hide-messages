@@ -5,7 +5,9 @@ import {
   applyHiddenPrefix,
   buildVisibleSessionContext,
   buildVisibleSessionContextWithHiddenPrefix,
+  dropHiddenEntries,
   isSessionTreeEntry,
+  selectVisibleEntries,
 } from "../src/session-visibility.js";
 import {
   buildLinearConversationSession,
@@ -67,4 +69,66 @@ test("buildVisibleSessionContextWithHiddenPrefix filters older active-branch ent
 
   assert.deepEqual(visibleContext.messages.map((message) => message.role), ["user", "assistant"]);
   assert.equal(treeEntries.some((entry) => entry.hidden === true), false);
+});
+
+test("selectVisibleEntries drops the older prefix of a compaction-aware entry list", () => {
+  const entries = buildSession(buildLinearConversationSession()).filter(isSessionTreeEntry);
+
+  const visible = selectVisibleEntries(entries, 2);
+
+  assert.deepEqual(
+    visible.map((entry) => entry.id),
+    ["user-2", "assistant-2"],
+  );
+  // Source list is not mutated.
+  assert.equal(entries.length, 4);
+  assert.equal(entries.some((entry) => entry.hidden === true), false);
+});
+
+test("selectVisibleEntries keeps a trailing tool result attached to a visible assistant", () => {
+  const entries = buildSession([
+    { type: "session", id: "session-1" },
+    { type: "message", id: "user-1", parentId: null, message: { role: "user", content: [] } },
+    {
+      type: "message",
+      id: "assistant-1",
+      parentId: "user-1",
+      message: {
+        role: "assistant",
+        content: [{ type: "toolCall", id: "call-1", name: "read", arguments: { path: "a" } }],
+      },
+    },
+    {
+      type: "message",
+      id: "tool-result-1",
+      parentId: "assistant-1",
+      message: { role: "toolResult", toolCallId: "call-1", content: [] },
+    },
+  ]).filter(isSessionTreeEntry);
+
+  // Keep 1 primary item: the assistant, its trailing tool result rides along.
+  const visible = selectVisibleEntries(entries, 1);
+  assert.deepEqual(
+    visible.map((entry) => entry.id),
+    ["assistant-1", "tool-result-1"],
+  );
+});
+
+test("selectVisibleEntries rejects non-positive counts", () => {
+  const entries = buildSession(buildLinearConversationSession()).filter(isSessionTreeEntry);
+  assert.throws(() => selectVisibleEntries(entries, 0), /positive integer/);
+});
+
+test("dropHiddenEntries removes entries carrying a persisted hidden flag", () => {
+  const entries = buildSession(buildLinearConversationSession({ hiddenPrefix: true })).filter(
+    isSessionTreeEntry,
+  );
+
+  const visible = dropHiddenEntries(entries);
+
+  assert.equal(visible.some((entry) => entry.hidden === true), false);
+  assert.deepEqual(
+    visible.map((entry) => entry.id),
+    ["user-2", "assistant-2"],
+  );
 });

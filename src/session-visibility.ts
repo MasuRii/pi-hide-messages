@@ -152,6 +152,37 @@ export function applyHiddenPrefix(
   return updateEntriesForHiddenPrefix(entries, path, cutoffIndex);
 }
 
+/**
+ * Select the visible suffix of an already-linear, compaction-aware entry list
+ * by dropping the older prefix, keeping `keepVisibleCount` primary items.
+ *
+ * Unlike {@link buildVisibleSessionContextWithHiddenPrefix}, this operates on
+ * the exact entry array Pi renders (0.80.5+ `renderSessionEntries`) rather than
+ * rebuilding an active path, so no `hidden` flag mutation is required.
+ */
+export function selectVisibleEntries(
+  entries: readonly SessionTreeEntry[],
+  keepVisibleCount: number,
+): SessionTreeEntry[] {
+  if (!Number.isInteger(keepVisibleCount) || keepVisibleCount < 1) {
+    throw new Error("Visible count must be a positive integer.");
+  }
+
+  if (entries.length === 0) {
+    return [...entries];
+  }
+
+  const cutoffIndex = determineCutoffIndex(entries, keepVisibleCount);
+  return entries.slice(cutoffIndex);
+}
+
+/**
+ * Drop entries carrying a persisted `hidden` flag from a render-time entry list.
+ */
+export function dropHiddenEntries(entries: readonly SessionTreeEntry[]): SessionTreeEntry[] {
+  return entries.filter((entry) => !isHidden(entry));
+}
+
 export function buildVisibleSessionContextWithHiddenPrefix(
   entries: readonly SessionTreeEntry[],
   keepVisibleCount: number,
