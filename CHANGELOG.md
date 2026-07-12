@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-07-12
+
+### Fixed
+- Restored TUI hiding on Pi 0.80.5+ where the interactive renderer was refactored from `renderSessionContext()` to `renderSessionEntries()`/`renderSessionItems()`. The render patch now targets `renderSessionEntries` on current Pi and falls back to `renderSessionContext` on older releases, resolving the `InteractiveMode.renderSessionContext is unavailable` startup warning. ([#5](https://github.com/MasuRii/pi-hide-messages/issues/5))
+
+### Changed
+- Widened the Pi peer dependency range to include `^0.81.0`.
+
 ## [0.2.0] - 2026-07-03
 
 ### Added

@@ -28,6 +28,7 @@ const distRoot = fileURLToPath(new URL("..", import.meta.url));
 const patchFlag = "__piHideMessagesRenderPatched";
 const patchVersionKey = "__piHideMessagesRenderPatchVersion";
 const originalRenderKey = "__piHideMessagesOriginalRenderSessionContext";
+const originalRenderEntriesKey = "__piHideMessagesOriginalRenderSessionEntries";
 
 type NotificationLevel = "info" | "warning" | "error";
 
@@ -51,8 +52,20 @@ type StubInteractiveMode = {
     options?: { populateHistory?: boolean; updateFooter?: boolean };
     sessionContext: VisibleSessionContext;
   }>;
+  lastEntryRender?: {
+    options?: { populateHistory?: boolean; updateFooter?: boolean };
+    entries: SessionTreeEntry[];
+  };
+  renderEntryCalls?: Array<{
+    options?: { populateHistory?: boolean; updateFooter?: boolean };
+    entries: SessionTreeEntry[];
+  }>;
   renderSessionContext?(
     sessionContext: VisibleSessionContext,
+    options?: { populateHistory?: boolean; updateFooter?: boolean },
+  ): void;
+  renderSessionEntries?(
+    entries: SessionTreeEntry[],
     options?: { populateHistory?: boolean; updateFooter?: boolean },
   ): void;
   sessionManager?: {
@@ -140,6 +153,9 @@ function resetInteractiveModePrototype(InteractiveMode: { prototype: StubInterac
   delete prototype[patchFlag];
   delete prototype[patchVersionKey];
   delete prototype[originalRenderKey];
+  delete prototype[originalRenderEntriesKey];
+  // Force the legacy context-based patch path: no renderSessionEntries present.
+  delete prototype.renderSessionEntries;
   prototype.renderSessionContext = function renderSessionContext(
     this: StubInteractiveMode,
     sessionContext: VisibleSessionContext,
@@ -151,6 +167,28 @@ function resetInteractiveModePrototype(InteractiveMode: { prototype: StubInterac
     }
     this.renderCalls.push(call);
     this.lastRender = call;
+  };
+}
+
+function resetInteractiveModePrototypeEntries(InteractiveMode: { prototype: StubInteractiveMode }): void {
+  const prototype = InteractiveMode.prototype as StubInteractiveMode & Record<string, unknown>;
+  delete prototype[patchFlag];
+  delete prototype[patchVersionKey];
+  delete prototype[originalRenderKey];
+  delete prototype[originalRenderEntriesKey];
+  // Force the current entry-based patch path (Pi >= 0.80.5).
+  delete prototype.renderSessionContext;
+  prototype.renderSessionEntries = function renderSessionEntries(
+    this: StubInteractiveMode,
+    entries: SessionTreeEntry[],
+    options?: { populateHistory?: boolean; updateFooter?: boolean },
+  ): void {
+    const call = { entries, options };
+    if (!Array.isArray(this.renderEntryCalls)) {
+      this.renderEntryCalls = [];
+    }
+    this.renderEntryCalls.push(call);
+    this.lastEntryRender = call;
   };
 }
 
@@ -258,7 +296,7 @@ test("pi-hide-messages remains compatible with v0.68.0 startup, reload, and resu
   const tempRoot = createTempRoot("runtime-validation");
   const nodeModulesRoot = join(distRoot, "node_modules");
   const nodeModulesExisted = existsSync(nodeModulesRoot);
-  const stubPackageRoot = join(nodeModulesRoot, "@mariozechner", "pi-coding-agent");
+  const stubPackageRoot = join(nodeModulesRoot, "@earendil-works", "pi-coding-agent");
   installPiCodingAgentStub(stubPackageRoot);
 
   try {
@@ -485,6 +523,103 @@ test("pi-hide-messages remains compatible with v0.68.0 startup, reload, and resu
     assert.equal(
       notifications.some((entry) => entry.message.includes("failed to patch TUI message rendering")),
       false,
+    );
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+    rmSync(stubPackageRoot, { recursive: true, force: true });
+    if (!nodeModulesExisted) {
+      rmSync(nodeModulesRoot, { recursive: true, force: true });
+    }
+  }
+});
+
+test("pi-hide-messages patches the entry-based renderSessionEntries flow on Pi 0.80.5+", async () => {
+  const tempRoot = createTempRoot("runtime-validation-entries");
+  const nodeModulesRoot = join(distRoot, "node_modules");
+  const nodeModulesExisted = existsSync(nodeModulesRoot);
+  const stubPackageRoot = join(nodeModulesRoot, "@earendil-works", "pi-coding-agent");
+  installPiCodingAgentStub(stubPackageRoot);
+
+  try {
+    const { InteractiveMode } = await import("@earendil-works/pi-coding-agent");
+    const { applyHideMessagesRenderPatch } = await import("../src/render-patch.js");
+
+    resetInteractiveModePrototypeEntries(InteractiveMode as never);
+
+    const firstPatch = await applyHideMessagesRenderPatch();
+    assert.deepEqual(firstPatch, { patched: true, alreadyPatched: false });
+
+    // Confirm the current entry-based API was patched (not the legacy context API).
+    const prototype = InteractiveMode.prototype as StubInteractiveMode & Record<string, unknown>;
+    assert.equal(typeof prototype[originalRenderEntriesKey], "function");
+    assert.equal(prototype[originalRenderKey], undefined);
+
+    // Idempotent re-patch.
+    assert.deepEqual(await applyHideMessagesRenderPatch(), { patched: false, alreadyPatched: true });
+
+    const messageEntries = buildSessionEntries().filter(
+      (entry): entry is SessionTreeEntry => entry.type !== "session",
+    );
+
+    // Manual-hide with visibleCount 2 trims the compaction-aware entry list.
+    const hideState: RuntimeState = {
+      cwd: tempRoot,
+      leafId: "control-hide",
+      liveEntries: [
+        ...messageEntries,
+        {
+          type: "custom",
+          id: "control-hide",
+          parentId: "assistant-2",
+          timestamp: new Date(1_700_000_030_000).toISOString(),
+          customType: HIDE_MESSAGES_CONTROL_CUSTOM_TYPE,
+          data: {
+            mode: HIDE_MESSAGES_CONTROL_MODE_MANUAL_HIDE,
+            visibleCount: 2,
+            firstVisibleEntryId: "user-2",
+          },
+        } as SessionTreeEntry,
+      ],
+    };
+    const hideInstance = createInteractiveModeInstance(
+      InteractiveMode as new () => StubInteractiveMode,
+      hideState,
+    );
+    hideInstance.renderSessionEntries?.(messageEntries, { populateHistory: true, updateFooter: true });
+    assert.deepEqual(
+      hideInstance.lastEntryRender?.entries.map((entry) => entry.id),
+      ["user-2", "assistant-2"],
+    );
+    // Options are forwarded untouched to the original renderer.
+    assert.deepEqual(hideInstance.lastEntryRender?.options, {
+      populateHistory: true,
+      updateFooter: true,
+    });
+
+    // Manual-restore keeps every entry visible.
+    const restoreState: RuntimeState = {
+      cwd: tempRoot,
+      leafId: "control-restore",
+      liveEntries: [
+        ...messageEntries,
+        {
+          type: "custom",
+          id: "control-restore",
+          parentId: "assistant-2",
+          timestamp: new Date(1_700_000_040_000).toISOString(),
+          customType: HIDE_MESSAGES_CONTROL_CUSTOM_TYPE,
+          data: { mode: HIDE_MESSAGES_CONTROL_MODE_MANUAL_RESTORE },
+        } as SessionTreeEntry,
+      ],
+    };
+    const restoreInstance = createInteractiveModeInstance(
+      InteractiveMode as new () => StubInteractiveMode,
+      restoreState,
+    );
+    restoreInstance.renderSessionEntries?.(messageEntries);
+    assert.deepEqual(
+      restoreInstance.lastEntryRender?.entries.map((entry) => entry.id),
+      ["user-1", "assistant-1", "user-2", "assistant-2"],
     );
   } finally {
     rmSync(tempRoot, { recursive: true, force: true });
